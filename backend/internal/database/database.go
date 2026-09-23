@@ -62,6 +62,7 @@ func migrate(db *gorm.DB) error {
 		&model.ProcessNode{},
 		&model.DeviationScenario{},
 		&model.Safeguard{},
+		&model.SafeguardOutage{},
 		&model.CoverageEvaluation{},
 		&model.AuditLog{},
 	)

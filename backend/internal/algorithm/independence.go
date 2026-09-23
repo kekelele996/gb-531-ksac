@@ -59,6 +59,9 @@ func ResolveIndependence(safeguards []SnapshotSafeguard, referenceTime time.Time
 	return result
 }
 func ineligibleReason(safeguard SnapshotSafeguard, referenceTime time.Time) string {
+	if safeguard.ActiveOutageID != nil {
+		return fmt.Sprintf("planned outage #%d covers the snapshot reference time", *safeguard.ActiveOutageID)
+	}
 	if safeguard.LifecycleState != "active" {
 		return fmt.Sprintf("lifecycle state %q is not active", safeguard.LifecycleState)
 	}

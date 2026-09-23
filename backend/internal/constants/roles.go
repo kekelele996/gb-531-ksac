@@ -10,26 +10,29 @@ const (
 )
 
 const (
-	PermissionRead       = "read"
-	PermissionNodeWrite  = "node:write"
-	PermissionScenario   = "scenario:write"
-	PermissionReview     = "scenario:review"
-	PermissionSafeguard  = "safeguard:write"
-	PermissionEvaluation = "evaluation:run"
-	PermissionConfirm    = "evaluation:confirm"
+	PermissionRead            = "read"
+	PermissionNodeWrite       = "node:write"
+	PermissionScenario        = "scenario:write"
+	PermissionReview          = "scenario:review"
+	PermissionSafeguard       = "safeguard:write"
+	PermissionSafeguardOutage = "safeguard:outage"
+	PermissionEvaluation      = "evaluation:run"
+	PermissionConfirm         = "evaluation:confirm"
 )
 
 var rolePermissions = map[Role]map[string]struct{}{
 	RoleAdmin: {
 		PermissionRead: {}, PermissionNodeWrite: {}, PermissionScenario: {},
-		PermissionReview: {}, PermissionSafeguard: {}, PermissionEvaluation: {}, PermissionConfirm: {},
+		PermissionReview: {}, PermissionSafeguard: {}, PermissionSafeguardOutage: {},
+		PermissionEvaluation: {}, PermissionConfirm: {},
 	},
 	RoleProcessEngineer: {
 		PermissionRead: {}, PermissionNodeWrite: {}, PermissionScenario: {},
 		PermissionSafeguard: {}, PermissionEvaluation: {},
 	},
 	RoleSafetyReviewer: {
-		PermissionRead: {}, PermissionReview: {}, PermissionSafeguard: {}, PermissionEvaluation: {}, PermissionConfirm: {},
+		PermissionRead: {}, PermissionReview: {}, PermissionSafeguard: {}, PermissionSafeguardOutage: {},
+		PermissionEvaluation: {}, PermissionConfirm: {},
 	},
 	RoleAuditor: {PermissionRead: {}},
 }

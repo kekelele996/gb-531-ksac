@@ -44,6 +44,7 @@ type SnapshotSafeguard struct {
 	LastVerifiedAt   *time.Time `json:"last_verified_at"`
 	LifecycleState   string     `json:"lifecycle_state"`
 	EvidenceNote     string     `json:"evidence_note"`
+	ActiveOutageID   *uint      `json:"active_outage_id,omitempty"`
 }
 type Graph struct {
 	Nodes []GraphNode `json:"nodes"`
@@ -69,6 +70,14 @@ type GraphPath struct {
 	Consequence string `json:"consequence"`
 }
 func NewSnapshot(node model.ProcessNode, scenario model.DeviationScenario, safeguards []model.Safeguard, reference time.Time) Snapshot {
+	return NewSnapshotWithOutages(node, scenario, safeguards, nil, reference)
+}
+
+// NewSnapshotWithOutages freezes the evaluation input. outages maps a
+// safeguard ID to the ID of the registered outage covering the reference
+// time; marked safeguards are excluded from independence resolution and
+// scoring when the frozen snapshot is evaluated or replayed.
+func NewSnapshotWithOutages(node model.ProcessNode, scenario model.DeviationScenario, safeguards []model.Safeguard, outages map[uint]uint, reference time.Time) Snapshot {
 	ordered := append([]model.Safeguard(nil), safeguards...)
 	sort.Slice(ordered, func(i, j int) bool {
 		if ordered[i].IndependenceKey == ordered[j].IndependenceKey {
@@ -96,12 +105,17 @@ func NewSnapshot(node model.ProcessNode, scenario model.DeviationScenario, safeg
 			value := item.LastVerifiedAt.UTC().Truncate(time.Second)
 			verified = &value
 		}
-		snapshot.Safeguards = append(snapshot.Safeguards, SnapshotSafeguard{
+		entry := SnapshotSafeguard{
 			ID: item.ID, Name: item.Name, Type: item.SafeguardType,
 			IndependenceKey: item.IndependenceKey, Effectiveness: item.Effectiveness,
 			TestIntervalDays: item.TestIntervalDays, LastVerifiedAt: verified,
 			LifecycleState: item.LifecycleState, EvidenceNote: item.EvidenceNote,
-		})
+		}
+		if outageID, ok := outages[item.ID]; ok {
+			id := outageID
+			entry.ActiveOutageID = &id
+		}
+		snapshot.Safeguards = append(snapshot.Safeguards, entry)
 	}
 	return snapshot
 }

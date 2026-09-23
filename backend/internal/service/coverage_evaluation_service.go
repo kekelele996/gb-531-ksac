@@ -28,6 +28,7 @@ type coverageEvaluationService struct {
 	scenarios   repository.DeviationScenarioRepository
 	nodes       repository.ProcessNodeRepository
 	safeguards  repository.SafeguardRepository
+	outages     repository.SafeguardOutageRepository
 	audits      repository.AuditRepository
 	evaluator   *algorithm.Evaluator
 	now         func() time.Time
@@ -37,12 +38,13 @@ func NewCoverageEvaluationService(
 	scenarios repository.DeviationScenarioRepository,
 	nodes repository.ProcessNodeRepository,
 	safeguards repository.SafeguardRepository,
+	outages repository.SafeguardOutageRepository,
 	audits repository.AuditRepository,
 	evaluator *algorithm.Evaluator,
 ) CoverageEvaluationService {
 	return &coverageEvaluationService{
 		evaluations: evaluations, scenarios: scenarios, nodes: nodes,
-		safeguards: safeguards, audits: audits, evaluator: evaluator,
+		safeguards: safeguards, outages: outages, audits: audits, evaluator: evaluator,
 		now: func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -82,7 +84,11 @@ func (s *coverageEvaluationService) Run(
 		return dto.CoverageEvaluationResponse{}, false, util.WrapError(http.StatusInternalServerError, util.CodeInternal, "unable to load scenario safeguards", err)
 	}
 	referenceTime := s.now().Truncate(time.Second)
-	snapshot := algorithm.NewSnapshot(node, scenario, safeguards, referenceTime)
+	outages, err := s.activeOutageMap(ctx, safeguards, referenceTime)
+	if err != nil {
+		return dto.CoverageEvaluationResponse{}, false, util.WrapError(http.StatusInternalServerError, util.CodeInternal, "unable to load safeguard outages", err)
+	}
+	snapshot := algorithm.NewSnapshotWithOutages(node, scenario, safeguards, outages, referenceTime)
 	snapshotJSON, err := util.CanonicalJSON(snapshot)
 	if err != nil {
 		return dto.CoverageEvaluationResponse{}, false, util.WrapError(http.StatusInternalServerError, util.CodeInternal, "unable to freeze evaluation input", err)
@@ -367,4 +373,29 @@ func countCovered(paths []dto.CoveragePathResponse) int {
 		}
 	}
 	return count
+}
+
+// activeOutageMap resolves which registered outage covers each safeguard at
+// the snapshot freeze time. Overlap prevention guarantees at most one
+// effective window per safeguard at any moment.
+func (s *coverageEvaluationService) activeOutageMap(
+	ctx context.Context,
+	safeguards []model.Safeguard,
+	at time.Time,
+) (map[uint]uint, error) {
+	ids := make([]uint, 0, len(safeguards))
+	for _, safeguard := range safeguards {
+		ids = append(ids, safeguard.ID)
+	}
+	outages, err := s.outages.ActiveCovering(ctx, ids, at)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[uint]uint, len(outages))
+	for _, outage := range outages {
+		if _, exists := result[outage.SafeguardID]; !exists {
+			result[outage.SafeguardID] = outage.ID
+		}
+	}
+	return result, nil
 }
