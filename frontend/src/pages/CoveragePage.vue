@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CheckCircle2, FileCheck2, GitCompare, LoaderCircle, Network, Play, RefreshCw, XCircle } from 'lucide-vue-next'
+import { CheckCircle2, FileCheck2, GitCompare, LoaderCircle, Network, Play, RefreshCw, TimerOff, XCircle } from 'lucide-vue-next'
 import AppShell from '../components/common/AppShell.vue'
 import PageHeader from '../components/common/PageHeader.vue'
 import RiskBadge from '../components/common/RiskBadge.vue'
@@ -12,6 +12,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useCoverageEvaluationStore } from '../stores/coverage-evaluation'
 import { useDeviationScenarioStore } from '../stores/deviation-scenario'
 import { useSafeguardStore } from '../stores/safeguard'
+import { useSafeguardOutageStore } from '../stores/safeguard-outage'
 import { errorMessage } from '../api/client'
 import { coverageStateLabels } from '../types/enums/coverage-state'
 import type { CoverageSnapshot, EvaluationExplanation, PathEvidence, ScoringStep } from '../types/coverage-evaluation'
@@ -19,6 +20,7 @@ import type { CoverageSnapshot, EvaluationExplanation, PathEvidence, ScoringStep
 const evaluations = useCoverageEvaluationStore()
 const scenarios = useDeviationScenarioStore()
 const safeguards = useSafeguardStore()
+const outages = useSafeguardOutageStore()
 const { canEdit, canReview } = useAuth()
 const runner = useCoverageRun()
 const scenarioId = ref<number>()
@@ -37,11 +39,19 @@ const steps = computed<ScoringStep[]>(() => {
   return explanation.value.score_steps ?? []
 })
 const inputSnapshot = computed<CoverageSnapshot>(() => parse(selected.value?.input_snapshot ?? '', {} as CoverageSnapshot))
+interface FrozenOutageSafeguard { id: number; name: string; outage?: { id: number; reason: string; starts_at: string; ends_at: string } }
+const frozenOutageSafeguards = computed<FrozenOutageSafeguard[]>(() => {
+  const snap = parse(selected.value?.input_snapshot ?? '', {}) as { safeguards?: FrozenOutageSafeguard[] }
+  return (snap.safeguards ?? []).filter((item) => Boolean(item.outage))
+})
+const activeOutageNow = computed(() => scenarioSafeguards.value
+  .map((item) => outages.activeForSafeguard(item.id))
+  .filter((item): item is NonNullable<typeof item> => Boolean(item)))
 const uncoveredCount = computed(() => paths.value.filter((path) => !(path.covered ?? path.protected)).length)
 const scoreClass = computed(() => (selected.value?.coverage_score ?? 0) >= 80 ? 'good' : (selected.value?.coverage_score ?? 0) >= 55 ? 'warning' : 'danger')
 const scenarioLabel = (id: number) => { const item = scenarios.items.find((x) => x.id === id); return item ? `#${item.id} ${item.guideword.toUpperCase()} ${item.parameter}` : `#${id}` }
 
-async function refresh() { try { await Promise.all([evaluations.load(), scenarios.load(), safeguards.load()]); scenarioId.value ??= scenarios.items[0]?.id } catch (error) { ElMessage.error(errorMessage(error)) } }
+async function refresh() { try { await Promise.all([evaluations.load(), scenarios.load(), safeguards.load(), outages.load()]); scenarioId.value ??= scenarios.items[0]?.id } catch (error) { ElMessage.error(errorMessage(error)) } }
 async function run() { if (!scenarioId.value) return ElMessage.warning('请先选择偏差场景'); try { const result = await runner.launch(scenarioId.value); ElMessage.success(result.evaluation_state === 'failed' ? '评估完成但计算失败' : '覆盖评估已生成') } catch (error) { ElMessage.error(errorMessage(error)) } }
 async function changeState(kind: 'confirm' | 'void') { if (!selected.value) return; try { kind === 'confirm' ? await evaluations.confirm(selected.value.id) : await evaluations.voidRun(selected.value.id); ElMessage.success(kind === 'confirm' ? '评估已确认' : '评估已作废') } catch (error) { ElMessage.error(errorMessage(error)) } }
 onMounted(refresh)
@@ -56,6 +66,13 @@ onMounted(refresh)
       <div><p class="eyebrow">NEW EVALUATION</p><h2>选择场景并冻结输入</h2><p>每次运行使用唯一幂等键；重复请求返回同一评估。</p></div>
       <el-select v-model="scenarioId" placeholder="选择偏差场景"><el-option v-for="item in scenarios.items" :key="item.id" :label="scenarioLabel(item.id)" :value="item.id" /></el-select>
       <el-button v-if="canEdit || canReview" type="primary" :loading="runner.running.value" @click="run"><Play :size="16" />运行覆盖评估</el-button>
+    </section>
+    <section v-if="activeOutageNow.length" class="outage-banner">
+      <TimerOff :size="18" />
+      <div>
+        <strong>{{ activeOutageNow.length }} 项保护措施正处于计划停用窗口，本次冻结将不参与独立性去重和覆盖计分：</strong>
+        <span v-for="(item, index) in activeOutageNow" :key="item.id">{{ index > 0 ? '；' : '' }}{{ safeguards.items.find((x) => x.id === item.safeguard_id)?.name ?? `#${item.safeguard_id}` }}（{{ new Date(item.ends_at).toLocaleString('zh-CN', { hour12: false }) }} 自动恢复）</span>
+      </div>
     </section>
     <section class="run-selector" aria-label="历史评估">
       <button v-for="item in evaluations.items" :key="item.id" :class="{ selected: evaluations.selectedId === item.id }" @click="evaluations.selectedId = item.id">
@@ -86,6 +103,7 @@ onMounted(refresh)
         <aside class="coverage-evidence">
           <div class="section-heading"><h2>冻结证据</h2><el-tooltip content="查看完整输入快照"><el-button circle text aria-label="查看输入快照" @click="drawer = true"><FileCheck2 :size="17" /></el-button></el-tooltip></div>
           <dl class="evidence-pairs"><div><dt>场景</dt><dd>{{ scenarioLabel(selected.scenario_id) }}</dd></div><div><dt>保护措施</dt><dd>{{ scenarioSafeguards.length }} 项</dd></div><div><dt>独立性键</dt><dd>{{ new Set(scenarioSafeguards.map((x) => x.independence_key)).size }} 个</dd></div><div><dt>输入哈希</dt><dd><code>{{ selected.input_hash || inputSnapshot.input_hash || '见快照' }}</code></dd></div></dl>
+          <div v-if="frozenOutageSafeguards.length" class="dedupe-note outage-frozen"><strong>冻结时停用中（不计分、不去重）</strong><span v-for="item in frozenOutageSafeguards" :key="item.id">{{ item.name || `#${item.id}` }}：{{ item.outage?.reason }} · {{ new Date(item.outage!.starts_at).toLocaleString('zh-CN', { hour12: false }) }} → {{ new Date(item.outage!.ends_at).toLocaleString('zh-CN', { hour12: false }) }}</span></div>
           <div v-if="selected.deduplicated_safeguards?.length" class="dedupe-note"><strong>去重措施</strong><span v-for="item in selected.deduplicated_safeguards" :key="`${item.independence_key}-${item.kept_id}`">{{ item.independence_key }}：保留 #{{ item.kept_id }}，忽略 {{ item.ignored_ids.join(', ') }}</span></div>
           <div class="compare-tools"><GitCompare :size="16" /><el-select v-model="compareId" placeholder="选择版本对比" clearable><el-option v-for="item in comparable" :key="item.id" :label="`#${item.id} · ${item.coverage_score} 分`" :value="item.id" /></el-select></div>
           <div v-if="comparison" class="comparison-band"><div><span>覆盖分</span><strong>{{ comparison.coverage_score }} → {{ selected.coverage_score }}</strong></div><div><span>风险级别</span><strong>{{ comparison.risk_rank_after }} → {{ selected.risk_rank_after }}</strong></div></div>

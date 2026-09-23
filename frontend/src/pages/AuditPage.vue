@@ -14,7 +14,9 @@ const drawer = ref(false)
 const selected = ref<AuditLog>()
 const filters = reactive<AuditFilters>({ entity_type: '', actor_id: '', request_id: '', from: '', to: '' })
 const counts = computed(() => store.items.reduce<Record<string, number>>((acc, item) => { acc[item.entity_type] = (acc[item.entity_type] ?? 0) + 1; return acc }, {}))
-const entityLabels: Record<string, string> = { process_node: '工艺节点', deviation_scenario: '偏差场景', safeguard: '保护层', coverage_evaluation: '覆盖评估' }
+const entityLabels: Record<string, string> = { process_node: '工艺节点', deviation_scenario: '偏差场景', safeguard: '保护层', safeguard_outage: '停用登记', coverage_evaluation: '覆盖评估' }
+const auditEntities = ['process_node', 'deviation_scenario', 'safeguard', 'safeguard_outage', 'coverage_evaluation']
+const actionLabels: Record<string, string> = { outage_register: '登记停用', outage_revoke: '撤销停用' }
 async function refresh() { try { await store.load(filters) } catch (error) { ElMessage.error(errorMessage(error)) } }
 function inspect(item: AuditLog) { selected.value = item; drawer.value = true }
 function snapshot(value: unknown) { if (typeof value !== 'string') return value ?? {}; try { return JSON.parse(value) } catch { return value } }
@@ -26,7 +28,7 @@ onMounted(refresh)
     <PageHeader eyebrow="IMMUTABLE CHANGE JOURNAL" title="审计中心" description="按实体、操作者、request ID 与时间追溯四类核心实体的写操作和算法运行证据。">
       <el-button :loading="store.loading" @click="refresh"><RefreshCw :size="16" />刷新</el-button>
     </PageHeader>
-    <section class="audit-metrics"><div v-for="entity in ['process_node','deviation_scenario','safeguard','coverage_evaluation']" :key="entity"><span>{{ entityLabels[entity] }}</span><strong>{{ counts[entity] ?? 0 }}</strong></div></section>
+    <section class="audit-metrics"><div v-for="entity in auditEntities" :key="entity"><span>{{ entityLabels[entity] }}</span><strong>{{ counts[entity] ?? 0 }}</strong></div></section>
     <section class="audit-tools">
       <div class="audit-search"><Search :size="16" /><el-input v-model="filters.request_id" placeholder="request ID" clearable /><el-input v-model="filters.actor_id" placeholder="操作者 ID" clearable /></div>
       <div class="audit-search"><el-select v-model="filters.entity_type" placeholder="全部实体" clearable><el-option v-for="(label, value) in entityLabels" :key="value" :label="label" :value="value" /></el-select><el-date-picker v-model="filters.from" type="datetime" placeholder="起始时间" value-format="YYYY-MM-DDTHH:mm:ssZ" /><el-date-picker v-model="filters.to" type="datetime" placeholder="结束时间" value-format="YYYY-MM-DDTHH:mm:ssZ" /><el-button type="primary" @click="refresh">筛选</el-button></div>
@@ -36,7 +38,7 @@ onMounted(refresh)
         <el-table-column label="时间" min-width="170"><template #default="{ row }">{{ new Date(row.created_at).toLocaleString('zh-CN') }}</template></el-table-column>
         <el-table-column label="操作者" min-width="150"><template #default="{ row }"><div class="primary-cell"><strong>{{ row.actor_name || `用户 #${row.actor_id}` }}</strong><span>{{ row.actor_role }}</span></div></template></el-table-column>
         <el-table-column label="实体" min-width="145"><template #default="{ row }">{{ entityLabels[row.entity_type] || row.entity_type }} #{{ row.entity_id }}</template></el-table-column>
-        <el-table-column prop="action" label="动作" min-width="135"><template #default="{ row }"><code class="audit-action">{{ row.action }}</code></template></el-table-column>
+        <el-table-column prop="action" label="动作" min-width="135"><template #default="{ row }"><code class="audit-action">{{ actionLabels[row.action] || row.action }}</code></template></el-table-column>
         <el-table-column label="Request ID" min-width="230"><template #default="{ row }"><code>{{ row.request_id }}</code></template></el-table-column>
         <el-table-column label="证据" width="80" fixed="right"><template #default="{ row }"><el-tooltip content="查看变更前后快照"><el-button circle text aria-label="查看证据" @click="inspect(row)"><FileCheck2 :size="17" /></el-button></el-tooltip></template></el-table-column>
       </el-table>

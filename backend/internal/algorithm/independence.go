@@ -20,6 +20,22 @@ func ResolveIndependence(safeguards []SnapshotSafeguard, referenceTime time.Time
 	result := IndependenceResult{}
 	for _, safeguard := range safeguards {
 		key := strings.ToUpper(strings.TrimSpace(safeguard.IndependenceKey))
+		if safeguard.Outage != nil {
+			// A safeguard under planned maintenance is out of service. It is
+			// removed before independence grouping, so it neither occupies an
+			// independence key nor contributes any coverage; the frozen window
+			// remains in the snapshot and the rejected list for evidence.
+			result.Rejected = append(result.Rejected, RejectedSafeguard{
+				ID: safeguard.ID,
+				Reason: fmt.Sprintf(
+					"safeguard out of service for planned maintenance from %s to %s: %s",
+					safeguard.Outage.StartsAt.UTC().Format(time.RFC3339),
+					safeguard.Outage.EndsAt.UTC().Format(time.RFC3339),
+					safeguard.Outage.Reason,
+				),
+			})
+			continue
+		}
 		if key == "" {
 			result.Rejected = append(result.Rejected, RejectedSafeguard{ID: safeguard.ID, Reason: "missing independence key"})
 			continue

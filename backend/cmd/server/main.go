@@ -44,14 +44,16 @@ func run(logger *slog.Logger) error {
 	nodeRepo := repository.NewProcessNodeRepository(db)
 	scenarioRepo := repository.NewDeviationScenarioRepository(db)
 	safeguardRepo := repository.NewSafeguardRepository(db)
+	outageRepo := repository.NewSafeguardOutageRepository(db)
 	evaluationRepo := repository.NewCoverageEvaluationRepository(db)
 	auditRepo := repository.NewAuditRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	nodeHandler := handler.NewProcessNodeHandler(service.NewProcessNodeService(nodeRepo, auditRepo))
 	scenarioHandler := handler.NewDeviationScenarioHandler(service.NewDeviationScenarioService(scenarioRepo, nodeRepo, auditRepo))
 	safeguardHandler := handler.NewSafeguardHandler(service.NewSafeguardService(safeguardRepo, scenarioRepo, auditRepo))
+	outageHandler := handler.NewSafeguardOutageHandler(service.NewSafeguardOutageService(outageRepo, safeguardRepo, auditRepo, db))
 	evaluationHandler := handler.NewCoverageEvaluationHandler(service.NewCoverageEvaluationService(
-		evaluationRepo, scenarioRepo, nodeRepo, safeguardRepo, auditRepo, algorithm.NewEvaluator(),
+		evaluationRepo, scenarioRepo, nodeRepo, safeguardRepo, outageRepo, auditRepo, algorithm.NewEvaluator(),
 	))
 	auth := middleware.NewAuthenticator(userRepo, cfg)
 	loginLimiter := middleware.NewRateLimiter(cfg.LoginLimitPerMinute)
@@ -76,14 +78,16 @@ func run(logger *slog.Logger) error {
 	router.RegisterProcessNodeRoutes(api, nodeHandler)
 	router.RegisterDeviationScenarioRoutes(api, scenarioHandler)
 	router.RegisterSafeguardRoutes(api, safeguardHandler)
+	router.RegisterSafeguardOutageRoutes(api, outageHandler)
 	router.RegisterCoverageEvaluationRoutes(api, evaluationHandler, runLimiter)
 	api.GET("/audit-logs", middleware.RequireRoles(constants.RoleAdmin, constants.RoleSafetyReviewer, constants.RoleAuditor), middleware.AuditListHandler(auditRepo))
 	api.GET("/meta/enums", middleware.RequirePermission(constants.PermissionRead), func(c *gin.Context) {
 		util.Success(c, http.StatusOK, gin.H{
-			"deviation_guideword": constants.DeviationGuidewordValues(),
-			"coverage_state":      constants.CoverageStateValues(),
-			"scenario_state":      constants.ScenarioStateValues(),
-			"roles":               constants.RoleValues(),
+			"deviation_guideword":  constants.DeviationGuidewordValues(),
+			"coverage_state":       constants.CoverageStateValues(),
+			"scenario_state":       constants.ScenarioStateValues(),
+			"safeguard_outage_state": constants.SafeguardOutageStateValues(),
+			"roles":                constants.RoleValues(),
 		})
 	})
 	engine.NoRoute(func(c *gin.Context) {

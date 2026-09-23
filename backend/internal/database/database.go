@@ -62,6 +62,7 @@ func migrate(db *gorm.DB) error {
 		&model.ProcessNode{},
 		&model.DeviationScenario{},
 		&model.Safeguard{},
+		&model.SafeguardOutage{},
 		&model.CoverageEvaluation{},
 		&model.AuditLog{},
 	)
@@ -201,6 +202,42 @@ func seedDomain(tx *gorm.DB, users map[string]model.User) error {
 	}
 	if err := tx.Create(&safeguards).Error; err != nil {
 		return fmt.Errorf("create seed safeguards: %w", err)
+	}
+	outages := []model.SafeguardOutage{
+		{
+			// 停用中：SIS 停车联锁正在进行计划检修，当前评估不得计入该措施。
+			SafeguardID: safeguards[0].ID,
+			Reason:      "年度 SIS 逻辑回路校验，计划停车窗口内信号旁路",
+			StartsAt:    now.Add(-2 * time.Hour), EndsAt: now.Add(22 * time.Hour),
+			RegisteredBy: reviewer.ID, RegisteredByName: reviewer.Username,
+			CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now.Add(-3 * time.Hour),
+		},
+		{
+			// 待停用：未来检修窗口已登记，当前评估仍计入该措施。
+			SafeguardID: safeguards[3].ID,
+			Reason:      "止回阀随进料管线例行检修更换",
+			StartsAt:    now.Add(72 * time.Hour), EndsAt: now.Add(96 * time.Hour),
+			RegisteredBy: reviewer.ID, RegisteredByName: reviewer.Username,
+			CreatedAt: now.Add(-1 * time.Hour), UpdatedAt: now.Add(-1 * time.Hour),
+		},
+	}
+	if err := tx.Create(&outages).Error; err != nil {
+		return fmt.Errorf("create seed safeguard outages: %w", err)
+	}
+	endedStart := now.Add(-7 * 24 * time.Hour)
+	endedRevoke := now.Add(-6 * 24 * time.Hour)
+	endedOutage := model.SafeguardOutage{
+		// 已结束：一次提前撤销的窗口，台账保留登记与撤销记录。
+		SafeguardID: safeguards[3].ID,
+		Reason:      "阀位开关校验（原计划窗口）",
+		StartsAt:    endedStart, EndsAt: now.Add(-5 * 24 * time.Hour),
+		RevokedAt: &endedRevoke, RevokedBy: &reviewer.ID, RevokedByName: reviewer.Username,
+		RevokeReason: "检修提前完成，措施恢复服役并重新纳入覆盖评估",
+		RegisteredBy: reviewer.ID, RegisteredByName: reviewer.Username,
+		CreatedAt: now.Add(-8 * 24 * time.Hour), UpdatedAt: endedRevoke,
+	}
+	if err := tx.Create(&endedOutage).Error; err != nil {
+		return fmt.Errorf("create seed ended safeguard outage: %w", err)
 	}
 	return nil
 }

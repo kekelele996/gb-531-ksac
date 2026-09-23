@@ -1,18 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Ban, FileCheck2, Pencil, Plus, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-vue-next'
+import { Ban, FileCheck2, Pencil, Plus, RefreshCw, RotateCcw, ShieldCheck, TimerOff, Wrench } from 'lucide-vue-next'
 import AppShell from '../components/common/AppShell.vue'
 import PageHeader from '../components/common/PageHeader.vue'
 import EvidenceDrawer from '../components/common/EvidenceDrawer.vue'
 import { useAuth } from '../hooks/useAuth'
 import { useSafeguardStore } from '../stores/safeguard'
+import { useSafeguardOutageStore } from '../stores/safeguard-outage'
 import { useDeviationScenarioStore } from '../stores/deviation-scenario'
+import { useRouter } from 'vue-router'
 import { errorMessage } from '../api/client'
 import type { Safeguard, SafeguardInput, SafeguardType } from '../types/safeguard'
 
 const store = useSafeguardStore()
+const outages = useSafeguardOutageStore()
 const scenarios = useDeviationScenarioStore()
+const router = useRouter()
 const { canEdit, canReview } = useAuth()
 const dialog = ref(false)
 const drawer = ref(false)
@@ -29,8 +33,11 @@ const scenarioLabel = (id: number) => { const item = scenarios.items.find((x) =>
 function expiry(item: Safeguard) { if (item.verification_expires_at) return item.verification_expires_at; if (!item.last_verified_at) return undefined; const date = new Date(item.last_verified_at); date.setUTCDate(date.getUTCDate() + item.test_interval_days); return date.toISOString() }
 function expiryLabel(item: Safeguard) { const value = expiry(item); return value ? new Date(value).toLocaleDateString('zh-CN') : '尚未验证' }
 function isExpired(item: Safeguard) { const value = expiry(item); return item.verification_expired ?? (!value || new Date(value).getTime() < Date.now()) }
+const activeOutage = (item: Safeguard) => outages.activeForSafeguard(item.id)
+const pendingOutages = (item: Safeguard) => outages.pendingForSafeguard(item.id)
+const formatWindow = (value: string) => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
 
-async function refresh() { try { await Promise.all([store.load(), scenarios.load()]) } catch (error) { ElMessage.error(errorMessage(error)) } }
+async function refresh() { try { await Promise.all([store.load(), outages.load(), scenarios.load()]) } catch (error) { ElMessage.error(errorMessage(error)) } }
 function resetForm() { Object.assign(form, { name: '', safeguard_type: 'interlock' as SafeguardType, target_scenario_id: scenarios.items[0]?.id ?? 0, independence_key: '', effectiveness: 0.8, test_interval_days: 365, last_verified_at: new Date().toISOString(), evidence_note: '' }) }
 function openCreate() { editingId.value = undefined; resetForm(); dialog.value = true }
 function openEdit(item: Safeguard) { editingId.value = item.id; Object.assign(form, { name: item.name, safeguard_type: item.safeguard_type, target_scenario_id: item.target_scenario_id, independence_key: item.independence_key, effectiveness: item.effectiveness, test_interval_days: item.test_interval_days, last_verified_at: item.last_verified_at, evidence_note: item.evidence_note }); dialog.value = true }
@@ -44,6 +51,7 @@ onMounted(refresh)
   <AppShell>
     <PageHeader eyebrow="INDEPENDENT PROTECTION REGISTER" title="保护层台账" description="核对覆盖目标、独立性键、有效性与验证期限；同一路径的重复独立性键只计一次。">
       <el-button :loading="store.loading" @click="refresh"><RefreshCw :size="16" />刷新</el-button>
+      <el-button @click="router.push('/safeguard-outages')"><TimerOff :size="16" />停用台账</el-button>
       <el-button v-if="canEdit" type="primary" @click="openCreate"><Plus :size="16" />登记保护层</el-button>
     </PageHeader>
     <section class="filter-bar"><div><ShieldCheck :size="16" /><el-select v-model="filterScenario" placeholder="全部偏差场景" clearable><el-option v-for="item in scenarios.items" :key="item.id" :label="scenarioLabel(item.id)" :value="item.id" /></el-select></div><span>{{ visible.length }} 项保护措施 · {{ Object.keys(duplicateKeys).length }} 个独立键</span></section>
@@ -55,7 +63,20 @@ onMounted(refresh)
         <el-table-column label="有效性" width="115"><template #default="{ row }"><span class="numeric">{{ Math.round(row.effectiveness * 100) }}%</span></template></el-table-column>
         <el-table-column label="验证有效期" min-width="170"><template #default="{ row }"><span class="date-cell" :class="{ expired: isExpired(row) }">{{ expiryLabel(row) }}</span><small class="cell-note">间隔 {{ row.test_interval_days }} 天</small></template></el-table-column>
         <el-table-column label="生命周期" width="110"><template #default="{ row }"><span class="state-label" :class="isExpired(row) ? 'expired' : row.lifecycle_state">{{ isExpired(row) ? '已过期' : row.lifecycle_state }}</span></template></el-table-column>
-        <el-table-column label="操作" width="195" fixed="right"><template #default="{ row }"><el-tooltip content="查看证据"><el-button circle text aria-label="查看证据" @click="showEvidence(row)"><FileCheck2 :size="16" /></el-button></el-tooltip><el-tooltip v-if="canEdit" content="编辑"><el-button circle text aria-label="编辑" @click="openEdit(row)"><Pencil :size="16" /></el-button></el-tooltip><el-tooltip v-if="canReview" content="记录本次验证"><el-button circle text type="success" aria-label="验证保护层" @click="action(row, 'verify')"><ShieldCheck :size="16" /></el-button></el-tooltip><el-tooltip v-if="canReview && ['pending','active','expired'].includes(row.lifecycle_state)" content="标记失效"><el-button circle text type="danger" aria-label="标记失效" @click="action(row, 'invalidate')"><Ban :size="16" /></el-button></el-tooltip><el-tooltip v-if="canReview && row.lifecycle_state === 'invalid'" content="恢复到待验证状态"><el-button circle text type="success" aria-label="恢复" @click="action(row, 'restore')"><RotateCcw :size="16" /></el-button></el-tooltip></template></el-table-column>
+        <el-table-column label="计划检修" min-width="190">
+          <template #default="{ row }">
+            <div v-if="activeOutage(row)" class="outage-cell active">
+              <span class="state-label outage-active"><TimerOff :size="12" />停用中</span>
+              <small>{{ formatWindow(activeOutage(row)!.starts_at) }} → {{ formatWindow(activeOutage(row)!.ends_at) }}</small>
+            </div>
+            <div v-else-if="pendingOutages(row).length" class="outage-cell pending">
+              <span class="state-label outage-pending"><Wrench :size="12" />待停用 × {{ pendingOutages(row).length }}</span>
+              <small>最近 {{ formatWindow(pendingOutages(row).slice().sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0].starts_at) }}</small>
+            </div>
+            <span v-else class="cell-note">在役 / 无停用窗口</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="235" fixed="right"><template #default="{ row }"><el-tooltip content="查看证据"><el-button circle text aria-label="查看证据" @click="showEvidence(row)"><FileCheck2 :size="16" /></el-button></el-tooltip><el-tooltip v-if="canEdit" content="编辑"><el-button circle text aria-label="编辑" @click="openEdit(row)"><Pencil :size="16" /></el-button></el-tooltip><el-tooltip v-if="canReview" content="记录本次验证"><el-button circle text type="success" aria-label="验证保护层" @click="action(row, 'verify')"><ShieldCheck :size="16" /></el-button></el-tooltip><el-tooltip v-if="canReview && ['pending','active','expired'].includes(row.lifecycle_state)" content="标记失效"><el-button circle text type="danger" aria-label="标记失效" @click="action(row, 'invalidate')"><Ban :size="16" /></el-button></el-tooltip><el-tooltip v-if="canReview && row.lifecycle_state === 'invalid'" content="恢复到待验证状态"><el-button circle text type="success" aria-label="恢复" @click="action(row, 'restore')"><RotateCcw :size="16" /></el-button></el-tooltip><el-tooltip v-if="canReview && !activeOutage(row)" content="登记计划停用"><el-button circle text type="warning" aria-label="登记计划停用" @click="router.push('/safeguard-outages')"><TimerOff :size="16" /></el-button></el-tooltip></template></el-table-column>
       </el-table>
     </section>
     <el-dialog v-model="dialog" :title="editingId ? '编辑保护层' : '登记独立保护层'" width="min(700px, 94vw)">

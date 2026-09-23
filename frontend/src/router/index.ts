@@ -10,6 +10,7 @@ const router = createRouter({
     { path: '/nodes', name: 'nodes', component: () => import('../pages/NodesPage.vue') },
     { path: '/deviations', name: 'deviations', component: () => import('../pages/DeviationsPage.vue') },
     { path: '/safeguards', name: 'safeguards', component: () => import('../pages/SafeguardsPage.vue') },
+    { path: '/safeguard-outages', name: 'safeguard-outages', component: () => import('../pages/SafeguardOutagesPage.vue') },
     { path: '/coverage', name: 'coverage', component: () => import('../pages/CoveragePage.vue') },
     { path: '/audit', name: 'audit', component: () => import('../pages/AuditPage.vue'), meta: { roles: ['admin', 'safety_reviewer', 'auditor'] } },
     { path: '/:pathMatch(.*)*', redirect: '/nodes' },

@@ -44,6 +44,17 @@ type SnapshotSafeguard struct {
 	LastVerifiedAt   *time.Time `json:"last_verified_at"`
 	LifecycleState   string     `json:"lifecycle_state"`
 	EvidenceNote     string     `json:"evidence_note"`
+	Outage           *SnapshotOutage `json:"outage,omitempty"`
+}
+
+// SnapshotOutage freezes the planned-maintenance window that takes a safeguard
+// out of service at the snapshot reference time. A nil pointer means the
+// safeguard was in service when the input was frozen.
+type SnapshotOutage struct {
+	ID       uint      `json:"id"`
+	Reason   string    `json:"reason"`
+	StartsAt time.Time `json:"starts_at"`
+	EndsAt   time.Time `json:"ends_at"`
 }
 type Graph struct {
 	Nodes []GraphNode `json:"nodes"`
@@ -68,7 +79,17 @@ type GraphPath struct {
 	Cause       string `json:"cause"`
 	Consequence string `json:"consequence"`
 }
-func NewSnapshot(node model.ProcessNode, scenario model.DeviationScenario, safeguards []model.Safeguard, reference time.Time) Snapshot {
+// NewSnapshot freezes the evaluation input. activeOutages holds the
+// planned-maintenance windows in service at the reference time, keyed by
+// safeguard ID; an entry removes the safeguard from independence dedup and
+// coverage scoring but keeps it visible in the frozen snapshot with the reason.
+func NewSnapshot(
+	node model.ProcessNode,
+	scenario model.DeviationScenario,
+	safeguards []model.Safeguard,
+	activeOutages map[uint]model.SafeguardOutage,
+	reference time.Time,
+) Snapshot {
 	ordered := append([]model.Safeguard(nil), safeguards...)
 	sort.Slice(ordered, func(i, j int) bool {
 		if ordered[i].IndependenceKey == ordered[j].IndependenceKey {
@@ -96,12 +117,20 @@ func NewSnapshot(node model.ProcessNode, scenario model.DeviationScenario, safeg
 			value := item.LastVerifiedAt.UTC().Truncate(time.Second)
 			verified = &value
 		}
-		snapshot.Safeguards = append(snapshot.Safeguards, SnapshotSafeguard{
+		frozen := SnapshotSafeguard{
 			ID: item.ID, Name: item.Name, Type: item.SafeguardType,
 			IndependenceKey: item.IndependenceKey, Effectiveness: item.Effectiveness,
 			TestIntervalDays: item.TestIntervalDays, LastVerifiedAt: verified,
 			LifecycleState: item.LifecycleState, EvidenceNote: item.EvidenceNote,
-		})
+		}
+		if outage, ok := activeOutages[item.ID]; ok {
+			frozen.Outage = &SnapshotOutage{
+				ID: outage.ID, Reason: outage.Reason,
+				StartsAt: outage.StartsAt.UTC().Truncate(time.Second),
+				EndsAt:   outage.EndsAt.UTC().Truncate(time.Second),
+			}
+		}
+		snapshot.Safeguards = append(snapshot.Safeguards, frozen)
 	}
 	return snapshot
 }

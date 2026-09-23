@@ -28,6 +28,7 @@ type coverageEvaluationService struct {
 	scenarios   repository.DeviationScenarioRepository
 	nodes       repository.ProcessNodeRepository
 	safeguards  repository.SafeguardRepository
+	outages     repository.SafeguardOutageRepository
 	audits      repository.AuditRepository
 	evaluator   *algorithm.Evaluator
 	now         func() time.Time
@@ -37,12 +38,13 @@ func NewCoverageEvaluationService(
 	scenarios repository.DeviationScenarioRepository,
 	nodes repository.ProcessNodeRepository,
 	safeguards repository.SafeguardRepository,
+	outages repository.SafeguardOutageRepository,
 	audits repository.AuditRepository,
 	evaluator *algorithm.Evaluator,
 ) CoverageEvaluationService {
 	return &coverageEvaluationService{
 		evaluations: evaluations, scenarios: scenarios, nodes: nodes,
-		safeguards: safeguards, audits: audits, evaluator: evaluator,
+		safeguards: safeguards, outages: outages, audits: audits, evaluator: evaluator,
 		now: func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -82,7 +84,11 @@ func (s *coverageEvaluationService) Run(
 		return dto.CoverageEvaluationResponse{}, false, util.WrapError(http.StatusInternalServerError, util.CodeInternal, "unable to load scenario safeguards", err)
 	}
 	referenceTime := s.now().Truncate(time.Second)
-	snapshot := algorithm.NewSnapshot(node, scenario, safeguards, referenceTime)
+	activeOutages, err := s.loadActiveOutages(ctx, safeguards, referenceTime)
+	if err != nil {
+		return dto.CoverageEvaluationResponse{}, false, err
+	}
+	snapshot := algorithm.NewSnapshot(node, scenario, safeguards, activeOutages, referenceTime)
 	snapshotJSON, err := util.CanonicalJSON(snapshot)
 	if err != nil {
 		return dto.CoverageEvaluationResponse{}, false, util.WrapError(http.StatusInternalServerError, util.CodeInternal, "unable to freeze evaluation input", err)
@@ -367,4 +373,31 @@ func countCovered(paths []dto.CoveragePathResponse) int {
 		}
 	}
 	return count
+}
+
+// loadActiveOutages maps every scenario safeguard to the planned-maintenance
+// window that takes it out of service at the freeze instant. Windows ending at
+// or before the freeze time are simply absent, so the safeguard rejoins later
+// evaluations without any manual restore action.
+func (s *coverageEvaluationService) loadActiveOutages(
+	ctx context.Context,
+	safeguards []model.Safeguard,
+	at time.Time,
+) (map[uint]model.SafeguardOutage, error) {
+	ids := make([]uint, 0, len(safeguards))
+	for _, safeguard := range safeguards {
+		ids = append(ids, safeguard.ID)
+	}
+	windows, err := s.outages.ActiveAt(ctx, ids, at)
+	if err != nil {
+		return nil, util.WrapError(http.StatusInternalServerError, util.CodeInternal, "unable to load planned-maintenance windows", err)
+	}
+	active := make(map[uint]model.SafeguardOutage, len(windows))
+	for _, window := range windows {
+		// Windows never overlap per safeguard, so the first entry wins.
+		if _, exists := active[window.SafeguardID]; !exists {
+			active[window.SafeguardID] = window
+		}
+	}
+	return active, nil
 }

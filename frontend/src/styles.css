@@ -111,6 +111,27 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
 .state-label.verified, .state-label.running { color: #1e6259; background: var(--teal-soft); border-color: #82b4a8; }
 .state-label.draft { color: #565f5c; background: #edf0ef; }
 .state-label.rework, .state-label.expired, .state-label.failed { color: #842a27; background: var(--red-soft); border-color: #d3a09d; }
+.state-label.outage-active { display: inline-flex; align-items: center; gap: 4px; color: #8e2a27; background: var(--red-soft); border-color: #d29a97; }
+.state-label.outage-pending { display: inline-flex; align-items: center; gap: 4px; color: #81500b; background: var(--amber-soft); border-color: #d4ad63; }
+.state-label.outage-ended { color: #5d6966; background: #eceeed; border-color: #b7bebc; }
+
+.outage-banner { display: flex; align-items: flex-start; gap: 12px; margin: 14px 0 4px; padding: 12px 16px; color: #6d2420; background: var(--red-soft); border-left: 4px solid var(--red); }
+.outage-banner svg { flex: 0 0 auto; margin-top: 2px; }
+.outage-banner div { display: flex; flex-wrap: wrap; gap: 2px 6px; font-size: .72rem; line-height: 1.5; }
+.outage-banner strong { font-size: .73rem; }
+.outage-cell { display: grid; gap: 3px; }
+.outage-cell small { color: var(--muted); font-size: .63rem; white-space: nowrap; }
+.outage-cell.active small { color: #8e2a27; font-weight: 650; }
+.outage-reason { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .72rem; line-height: 1.4; }
+.outage-metrics { display: grid; grid-template-columns: minmax(0, .18fr) minmax(0, .18fr) minmax(0, .18fr) minmax(0, .46fr); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
+.outage-metrics > div { min-height: 70px; display: flex; align-items: center; gap: 10px; padding: 13px 17px; border-right: 1px solid var(--line); cursor: pointer; }
+.outage-metrics > div:last-child { cursor: default; }
+.outage-metrics > div.on { background: var(--teal-soft); box-shadow: inset 0 -3px 0 var(--teal); }
+.outage-metrics span { color: var(--muted); font-size: .72rem; }
+.outage-metrics strong { margin-left: auto; font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.outage-metrics .metric-note { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .66rem; line-height: 1.45; }
+.outage-frozen { border-left-color: var(--red); }
+.outage-frozen strong { color: #8e2a27; }
 
 .split-workspace { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(350px, .75fr); gap: 32px; margin-top: 20px; }
 .editor-panel { min-width: 0; padding-left: 25px; border-left: 1px solid var(--line); }
@@ -211,7 +232,7 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
 .review-strip p { margin: 7px 0 11px; color: var(--muted); font-size: .69rem; line-height: 1.45; }
 .review-strip > div { display: flex; flex-wrap: wrap; gap: 7px; }
 
-.audit-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
+.audit-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
 .audit-metrics > div { min-height: 70px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 17px; border-right: 1px solid var(--line); }
 .audit-metrics > div:last-child { border-right: 0; }
 .audit-metrics span { color: var(--muted); font-size: .7rem; }
@@ -270,6 +291,8 @@ code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   .audit-metrics { grid-template-columns: 1fr 1fr; }
   .audit-metrics > div:nth-child(2) { border-right: 0; }
   .audit-metrics > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .outage-metrics { grid-template-columns: repeat(3, 1fr); }
+  .outage-metrics .metric-note { grid-column: 1 / -1; border-top: 1px solid var(--line); border-right: 0; }
   .login-shell { grid-template-columns: 1fr; }
   .login-identity { min-height: 400px; padding: 27px 27px 23px; }
   .login-identity::after { top: 28px; right: 27px; }

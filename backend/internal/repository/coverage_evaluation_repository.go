@@ -20,6 +20,7 @@ type CoverageEvaluationRepository interface {
 }
 type AuditRepository interface {
 	Record(context.Context, model.AuditLog) error
+	RecordTx(ctx context.Context, tx *gorm.DB, log model.AuditLog) error
 	List(context.Context, AuditQuery) ([]model.AuditLog, int64, error)
 }
 type UserRepository interface {
@@ -133,13 +134,17 @@ func (r *coverageEvaluationRepository) SetReplayResult(ctx context.Context, id u
 	return nil
 }
 func (r *auditRepository) Record(ctx context.Context, log model.AuditLog) error {
+	return r.RecordTx(ctx, r.db, log)
+}
+
+func (r *auditRepository) RecordTx(ctx context.Context, conn *gorm.DB, log model.AuditLog) error {
 	if log.BeforeSnapshot == "" {
 		log.BeforeSnapshot = "{}"
 	}
 	if log.AfterSnapshot == "" {
 		log.AfterSnapshot = "{}"
 	}
-	if err := r.db.WithContext(ctx).Create(&log).Error; err != nil {
+	if err := conn.WithContext(ctx).Create(&log).Error; err != nil {
 		return fmt.Errorf("record audit log: %w", err)
 	}
 	return nil
